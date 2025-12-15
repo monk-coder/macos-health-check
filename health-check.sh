@@ -206,7 +206,7 @@ if [ -n "$SPOTLIGHT_CPU" ]; then
     if [ "$SPOTLIGHT_INT" -gt 30 ]; then
         printf "     ${WARN} ${YELLOW}Spotlight Search${NC} indexing ${DIM}(${SPOTLIGHT_CPU}%%)${NC}\n"
         printf "        ${DIM}${ARROW} Spotlight is organizing your files${NC}\n"
-        add_issue "Spotlight using ${SPOTLIGHT_CPU}% CPU" "Temporarily disable Spotlight indexing" "sudo mdutil -a -i off && echo 'Spotlight indexing disabled. Re-enable with: sudo mdutil -a -i on'"
+        add_issue "Spotlight using ${SPOTLIGHT_CPU}% CPU" "Rebuild Spotlight index (fixes stuck indexing)" "sudo mdutil -E / && echo 'Spotlight index rebuilding in background - this may take a while but search will keep working'"
         issues_found=$((issues_found + 1))
     else
         printf "     ${CHECK} ${GREEN}Spotlight Search${NC} ${DIM}(${SPOTLIGHT_CPU}%% - normal)${NC}\n"
