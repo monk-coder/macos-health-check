@@ -460,6 +460,286 @@ fi
 echo ""
 line
 
+# ============ PROBLEM PROCESSES ============
+echo ""
+printf "  ${BOLD}${WHITE}👻 PROBLEM PROCESSES${NC}\n"
+echo ""
+
+# ---- Zombie Processes ----
+printf "     ${DIM}── Zombie Processes ──${NC}\n"
+ZOMBIE_COUNT=0
+while IFS= read -r zombie_line; do
+    [ -z "$zombie_line" ] && continue
+    ZOMBIE_COUNT=$((ZOMBIE_COUNT + 1))
+
+    pid=$(echo "$zombie_line" | awk '{print $1}')
+    ppid=$(echo "$zombie_line" | awk '{print $2}')
+    proc=$(echo "$zombie_line" | awk '{print $3}')
+
+    printf "     ${CROSS} ${RED}Zombie:${NC} %s ${DIM}(PID: %s, Parent: %s)${NC}\n" "$proc" "$pid" "$ppid"
+
+    # Get parent process name
+    parent_name=$(ps -o comm= -p "$ppid" 2>/dev/null)
+    if [ -n "$parent_name" ]; then
+        printf "        ${DIM}${ARROW} Parent process: %s${NC}\n" "$parent_name"
+        add_issue "Zombie process: ${proc} (PID: ${pid})" "Kill parent process ${parent_name}" "kill -9 ${ppid} 2>/dev/null && echo 'Parent process killed, zombie should be cleaned up' || echo 'Could not kill parent'"
+    fi
+    issues_found=$((issues_found + 1))
+done < <(ps aux | awk '$8 ~ /Z/ {print $2, $3, $11}' 2>/dev/null)
+
+if [ "$ZOMBIE_COUNT" -eq 0 ]; then
+    printf "     ${CHECK} ${GREEN}No zombie processes${NC}\n"
+fi
+
+# ---- Not Responding Apps ----
+echo ""
+printf "     ${DIM}── Not Responding Apps ──${NC}\n"
+HUNG_FOUND=0
+
+# Use lsappinfo to find hung apps (macOS specific)
+if command -v lsappinfo &>/dev/null; then
+    while IFS= read -r app_line; do
+        [ -z "$app_line" ] && continue
+
+        app_name=$(echo "$app_line" | sed 's/"//g' | xargs)
+        [ -z "$app_name" ] && continue
+
+        # Check if app is not responding using AppleScript
+        is_hung=$(osascript -e "tell application \"System Events\" to set appList to name of every application process whose background only is false" 2>/dev/null | grep -c "$app_name" || echo "0")
+
+        HUNG_FOUND=1
+        printf "     ${CROSS} ${RED}Not Responding:${NC} %s\n" "$app_name"
+        printf "        ${DIM}${ARROW} App is hung or frozen${NC}\n"
+        add_issue "${app_name} not responding" "Force quit ${app_name}" "osascript -e 'quit app \"${app_name}\"' 2>/dev/null || killall \"${app_name}\" 2>/dev/null && echo '${app_name} force quit' || echo 'Could not quit app'"
+        issues_found=$((issues_found + 1))
+    done < <(lsappinfo list | grep -B5 "ApplicationType.*Foreground" | grep "not responding" | awk -F'"' '{print $2}' 2>/dev/null)
+fi
+
+# Alternative: check for apps using SIGINFO that don't respond
+# This finds GUI apps that might be hung by checking if they have high CPU but no recent activity
+while IFS= read -r proc_line; do
+    [ -z "$proc_line" ] && continue
+
+    pid=$(echo "$proc_line" | awk '{print $1}')
+    cpu=$(echo "$proc_line" | awk '{print $2}')
+    mem=$(echo "$proc_line" | awk '{print $3}')
+    state=$(echo "$proc_line" | awk '{print $4}')
+    proc=$(echo "$proc_line" | awk '{print $5}')
+
+    # Skip if already found or not a GUI app indicator
+    case "$proc" in
+        *Helper*|*Agent*|*Daemon*|*Service*) continue ;;
+    esac
+
+    # Check for uninterruptible sleep state (U) which often indicates hung
+    if [[ "$state" == *"U"* ]]; then
+        HUNG_FOUND=1
+        printf "     ${WARN} ${YELLOW}Possibly hung:${NC} %s ${DIM}(state: uninterruptible)${NC}\n" "$proc"
+        printf "        ${DIM}${ARROW} Process in uninterruptible sleep - may be waiting on I/O${NC}\n"
+        add_issue "${proc} possibly hung (PID: ${pid})" "Force kill ${proc}" "kill -9 ${pid} 2>/dev/null && echo '${proc} killed' || echo 'Could not kill process'"
+        issues_found=$((issues_found + 1))
+    fi
+done < <(ps -axo pid,pcpu,pmem,state,comm 2>/dev/null | tail -n +2)
+
+if [ "$HUNG_FOUND" -eq 0 ]; then
+    printf "     ${CHECK} ${GREEN}No hung applications detected${NC}\n"
+fi
+
+# ---- Memory Hogs (High RAM, Low CPU) ----
+echo ""
+printf "     ${DIM}── Memory Hogs (idle but using RAM) ──${NC}\n"
+MEM_HOG_FOUND=0
+
+while IFS= read -r proc_line; do
+    [ -z "$proc_line" ] && continue
+
+    mem_mb=$(echo "$proc_line" | awk '{print $1}')
+    cpu=$(echo "$proc_line" | awk '{print $2}')
+    pid=$(echo "$proc_line" | awk '{print $3}')
+    proc=$(echo "$proc_line" | awk '{print $4}')
+
+    # Skip if not numeric
+    case "$mem_mb" in
+        [0-9]*) ;;
+        *) continue ;;
+    esac
+
+    cpu_int=${cpu%%.*}
+
+    # Memory hog: >500MB RAM but <5% CPU (idle but consuming memory)
+    if [ "$mem_mb" -gt 500 ] && [ "$cpu_int" -lt 5 ]; then
+        # Skip essential system processes
+        case "$proc" in
+            kernel_task|WindowServer|mds|mds_stores|Finder|Dock|SystemUIServer|loginwindow) continue ;;
+        esac
+
+        MEM_HOG_FOUND=1
+        printf "     ${WARN} ${YELLOW}%s${NC} using ${BOLD}%sMB${NC} RAM but only ${DIM}%s%% CPU${NC}\n" "$proc" "$mem_mb" "$cpu"
+        printf "        ${DIM}${ARROW} Idle app consuming memory${NC}\n"
+
+        # Try to get the app name for a cleaner quit
+        app_name=$(ps -o comm= -p "$pid" 2>/dev/null | xargs basename 2>/dev/null)
+        add_issue "${proc} using ${mem_mb}MB RAM (idle)" "Quit ${proc}" "osascript -e 'quit app \"${app_name}\"' 2>/dev/null || kill ${pid} 2>/dev/null && echo '${proc} closed' || echo 'Could not close'"
+        issues_found=$((issues_found + 1))
+    fi
+done < <(ps -axo rss,pcpu,pid,comm 2>/dev/null | tail -n +2 | awk '{print int($1/1024), $2, $3, $4}' | sort -rn | head -20)
+
+if [ "$MEM_HOG_FOUND" -eq 0 ]; then
+    printf "     ${CHECK} ${GREEN}No idle memory hogs detected${NC}\n"
+fi
+
+# ---- Idle Background Apps ----
+echo ""
+printf "     ${DIM}── Idle Background Apps ──${NC}\n"
+IDLE_FOUND=0
+
+# Find GUI apps that have been running for a while with minimal CPU
+while IFS= read -r proc_line; do
+    [ -z "$proc_line" ] && continue
+
+    etime=$(echo "$proc_line" | awk '{print $1}')
+    cpu=$(echo "$proc_line" | awk '{print $2}')
+    pid=$(echo "$proc_line" | awk '{print $3}')
+    proc=$(echo "$proc_line" | awk '{print $4}')
+
+    # Parse elapsed time - looking for apps running 2+ hours
+    hours=0
+    if [[ "$etime" == *"-"* ]]; then
+        # Format: days-HH:MM:SS - definitely old
+        hours=999
+    elif [[ "$etime" == *":"*":"* ]]; then
+        # Format: HH:MM:SS
+        hours=$(echo "$etime" | cut -d: -f1)
+    fi
+
+    cpu_int=${cpu%%.*}
+
+    # Skip if not old enough or using CPU
+    [ "$hours" -lt 2 ] && continue
+    [ "$cpu_int" -gt 1 ] && continue
+
+    # Only look at likely GUI apps (capitalized names, not helpers/daemons)
+    case "$proc" in
+        [A-Z]*)
+            # Skip essential apps and system processes
+            case "$proc" in
+                Finder|Dock|SystemUIServer|loginwindow|Spotlight|Safari|Terminal|iTerm*|Code|Cursor) continue ;;
+                *Helper|*Agent|*Daemon|*Service|*Worker) continue ;;
+            esac
+
+            IDLE_FOUND=1
+            printf "     ${WARN} ${YELLOW}%s${NC} idle for ${BOLD}%s${NC} ${DIM}(%s%% CPU)${NC}\n" "$proc" "$etime" "$cpu"
+            printf "        ${DIM}${ARROW} App running in background, not being used${NC}\n"
+            add_issue "${proc} idle for ${etime}" "Quit ${proc}" "osascript -e 'quit app \"${proc}\"' 2>/dev/null || kill ${pid} 2>/dev/null && echo '${proc} closed' || echo 'Could not close'"
+            issues_found=$((issues_found + 1))
+            ;;
+    esac
+done < <(ps -axo etime,pcpu,pid,comm 2>/dev/null | tail -n +2 | head -50)
+
+if [ "$IDLE_FOUND" -eq 0 ]; then
+    printf "     ${CHECK} ${GREEN}No idle background apps detected${NC}\n"
+fi
+
+# ---- Unnecessary Launch Agents ----
+echo ""
+printf "     ${DIM}── Unnecessary Launch Agents ──${NC}\n"
+AGENT_FOUND=0
+
+# Known bloatware/unnecessary launch agents
+declare -a KNOWN_BLOAT=(
+    "com.adobe.AdobeCreativeCloud"
+    "com.adobe.ccxprocess"
+    "com.adobe.CCLibrary"
+    "com.spotify.webhelper"
+    "com.google.keystone"
+    "com.microsoft.update"
+    "com.oracle.java"
+    "com.McAfee"
+    "com.symantec"
+    "com.norton"
+    "com.avast"
+    "com.avg"
+    "com.mackeeper"
+    "com.zeobit"
+    "com.pckeeper"
+    "com.cleanmymac"
+    "com.macpaw"
+)
+
+# Check user launch agents
+for agent_file in ~/Library/LaunchAgents/*.plist 2>/dev/null; do
+    [ -f "$agent_file" ] || continue
+
+    agent_name=$(basename "$agent_file" .plist)
+
+    # Check if it's known bloatware
+    for bloat in "${KNOWN_BLOAT[@]}"; do
+        if [[ "$agent_name" == *"$bloat"* ]]; then
+            AGENT_FOUND=1
+
+            # Check if it's currently loaded
+            is_loaded=$(launchctl list 2>/dev/null | grep -c "$agent_name" || echo "0")
+            if [ "$is_loaded" -gt 0 ]; then
+                status="running"
+                printf "     ${WARN} ${YELLOW}%s${NC} ${DIM}(running)${NC}\n" "$agent_name"
+            else
+                status="installed"
+                printf "     ${DOT} ${DIM}%s (installed but not running)${NC}\n" "$agent_name"
+            fi
+
+            printf "        ${DIM}${ARROW} Unnecessary background service${NC}\n"
+            add_issue "Launch agent: ${agent_name}" "Disable ${agent_name}" "launchctl unload -w '${agent_file}' 2>/dev/null && echo '${agent_name} disabled' || echo 'Could not disable (may need manual removal)'"
+            issues_found=$((issues_found + 1))
+            break
+        fi
+    done
+done
+
+# Check for high-resource launch agents currently running
+while IFS= read -r agent_line; do
+    [ -z "$agent_line" ] && continue
+
+    pid=$(echo "$agent_line" | awk '{print $1}')
+    cpu=$(echo "$agent_line" | awk '{print $2}')
+    mem=$(echo "$agent_line" | awk '{print $3}')
+    proc=$(echo "$agent_line" | awk '{print $4}')
+
+    # Skip if not numeric or low resource
+    case "$cpu" in
+        [0-9]*) ;;
+        *) continue ;;
+    esac
+
+    cpu_int=${cpu%%.*}
+    mem_int=${mem%%.*}
+
+    # Flag agents using significant resources
+    if [ "$cpu_int" -gt 10 ] || [ "$mem_int" -gt 5 ]; then
+        case "$proc" in
+            *Agent*|*Helper*|*Daemon*)
+                # Skip known good agents
+                case "$proc" in
+                    UserEventAgent|CalendarAgent|ContactsAgent|SafariBookmarksSyncAgent) continue ;;
+                    CommCenter|cloudd|nsurlsessiond|trustd) continue ;;
+                esac
+
+                AGENT_FOUND=1
+                printf "     ${WARN} ${YELLOW}%s${NC} using ${BOLD}%s%% CPU / %s%% MEM${NC}\n" "$proc" "$cpu" "$mem"
+                printf "        ${DIM}${ARROW} Background agent consuming resources${NC}\n"
+                add_issue "${proc} using resources" "Kill ${proc}" "killall '${proc}' 2>/dev/null && echo '${proc} killed' || echo 'Could not kill'"
+                issues_found=$((issues_found + 1))
+                ;;
+        esac
+    fi
+done < <(ps -axo pid,pcpu,pmem,comm 2>/dev/null | tail -n +2)
+
+if [ "$AGENT_FOUND" -eq 0 ]; then
+    printf "     ${CHECK} ${GREEN}No unnecessary launch agents detected${NC}\n"
+fi
+
+echo ""
+line
+
 # ============ MEMORY ============
 echo ""
 printf "  ${BOLD}${WHITE}🧠 MEMORY STATUS${NC}\n"

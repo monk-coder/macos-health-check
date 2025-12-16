@@ -76,6 +76,25 @@ That's it! No installation required.
 
 ──────────────────────────────────────────────────────────────────────
 
+  👻 PROBLEM PROCESSES
+
+     ── Zombie Processes ──
+     ✓ No zombie processes
+
+     ── Not Responding Apps ──
+     ✓ No hung applications detected
+
+     ── Memory Hogs (idle but using RAM) ──
+     ✓ No idle memory hogs detected
+
+     ── Idle Background Apps ──
+     ✓ No idle background apps detected
+
+     ── Unnecessary Launch Agents ──
+     ✓ No unnecessary launch agents detected
+
+──────────────────────────────────────────────────────────────────────
+
   🧠 MEMORY STATUS
 
      ✓ Plenty of memory available
@@ -123,6 +142,17 @@ When issues are detected, the script offers interactive fixes. You choose which 
 | **Safari** | > 100% total CPU | Quits Safari | No |
 | **Firefox** | > 100% total CPU | Quits Firefox | No |
 | **Any other process** | > 50% CPU | Kills the process (you choose) | No |
+
+### Problem Processes - Fixable
+
+| Issue | When Detected | What the Fix Does | Needs Password? |
+|-------|---------------|-------------------|-----------------|
+| **Zombie processes** | Process state = Z | Kills parent process to clean up | No |
+| **Hung/frozen apps** | App not responding | Force quits the app | No |
+| **Memory hogs** | >500MB RAM + <5% CPU | Quits the idle app | No |
+| **Idle background apps** | Running 2+ hours + <1% CPU | Quits the app | No |
+| **Bloatware agents** | Known unnecessary agents | Disables the launch agent | No |
+| **Resource-heavy agents** | >10% CPU or >5% memory | Kills the agent | No |
 
 ### Memory Issues - Fixable
 
@@ -182,6 +212,17 @@ Some issues are detected and explained, but **cannot be automatically fixed** be
 - Finds ANY process using > 50% CPU
 - Shows process name, PID, and how long it's been running
 - Identifies common types: Node.js, Python, Java, Docker, Electron apps, Xcode, design apps, etc.
+
+### Problem Processes Detected
+
+| Type | How It's Detected | Why It's a Problem |
+|------|-------------------|-------------------|
+| **Zombie processes** | Process state shows "Z" | Dead processes taking up PID slots, parent didn't clean up |
+| **Hung apps** | macOS marks as "not responding" or in uninterruptible sleep | App is frozen, won't respond to input |
+| **Memory hogs** | >500MB RAM but <5% CPU | App sitting idle but hogging memory |
+| **Idle apps** | Running 2+ hours with <1% CPU | Forgotten app wasting resources |
+| **Bloatware agents** | Matches known list (Adobe, McAfee, Norton, MacKeeper, etc.) | Unnecessary background services |
+| **Heavy agents** | Background agent using >10% CPU or >5% memory | Agent consuming too many resources |
 
 ### Resource Monitoring
 | Resource | Warning | Critical |
