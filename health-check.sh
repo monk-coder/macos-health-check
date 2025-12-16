@@ -667,7 +667,8 @@ declare -a KNOWN_BLOAT=(
 )
 
 # Check user launch agents
-for agent_file in ~/Library/LaunchAgents/*.plist 2>/dev/null; do
+agents=$(ls ~/Library/LaunchAgents/*.plist 2> /dev/null)
+for agent_file in $agents; do
     [ -f "$agent_file" ] || continue
 
     agent_name=$(basename "$agent_file" .plist)
@@ -678,7 +679,8 @@ for agent_file in ~/Library/LaunchAgents/*.plist 2>/dev/null; do
             AGENT_FOUND=1
 
             # Check if it's currently loaded
-            is_loaded=$(launchctl list 2>/dev/null | grep -c "$agent_name" || echo "0")
+            is_loaded=$(launchctl list 2>/dev/null | grep -c "$agent_name" | bc  || echo 0)
+
             if [ "$is_loaded" -gt 0 ]; then
                 status="running"
                 printf "     ${WARN} ${YELLOW}%s${NC} ${DIM}(running)${NC}\n" "$agent_name"
