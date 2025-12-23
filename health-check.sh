@@ -73,6 +73,35 @@ DISK_PERCENT=0
 LOG_FILE=""
 VERBOSE=false
 
+# Common bloatware list
+BLOATWARE_LIST=(
+    # Google
+    "com.google.keystone"
+    # Adobe
+    "com.adobe.AdobeCreativeCloud"
+    "com.adobe.ccxprocess"
+    "com.adobe.CCLibrary"
+    # Microsoft
+    "com.microsoft.update"
+    # Spotify
+    "com.spotify.client.startuphelper"
+    "com.spotify.webhelper"
+    # Antivirus
+    "com.avast"
+    "com.McAfee"
+    # Other utils
+    "com.dropbox.DropboxMacUpdate.agent"
+    "com.oracle.java"
+    "com.symantec"
+    "com.norton"
+    "com.avg"
+    "com.mackeeper"
+    "com.zeobit"
+    "com.pckeeper"
+    "com.cleanmymac"
+    "com.macpaw"
+)
+
 # Terminal settings
 TERM_WIDTH=$(tput cols 2>/dev/null || echo 60)
 [ "$TERM_WIDTH" -gt 70 ] && TERM_WIDTH=70
@@ -520,65 +549,7 @@ detect_resource_heavy_agents() {
 detect_bloatware() {
     echo ""; printf "     ${DIM}── Bloatware Agents ──${NC}\n"
     local bloatware_found=0
-    local apple_bloatware_agents_list=(
-        "com.apple.accessibility.MotionTrackingAgent"
-        "com.apple.ap.adprivacyd"
-        "com.apple.ap.promotedcontentd"
-        "com.apple.geoanalyticsd"
-        "com.apple.inputanalyticsd"
-        "com.apple.routined"
-        "com.apple.macos.studentd"
-    )
-    local apple_bloatware_daemons_list=(
-        "com.apple.analyticsd"
-        "com.apple.audioanalyticsd"
-        "com.apple.ecosystemanalyticsd"
-        "com.apple.wifianalyticsd"
-    )
-    local other_bloatware_list=(
-        # Google
-        "com.google.keystone"
-        # Adobe
-        "com.adobe.AdobeCreativeCloud"
-        "com.adobe.ccxprocess"
-        "com.adobe.CCLibrary"
-        # Microsoft
-        "com.microsoft.update"
-        # Spotify
-        "com.spotify.client.startuphelper"
-        "com.spotify.webhelper"
-        # Antivirus
-        "com.avast"
-        "com.McAfee"
-        # Other utils
-        "com.dropbox.DropboxMacUpdate.agent"
-        "com.oracle.java"
-        "com.symantec"
-        "com.norton"
-        "com.avg"
-        "com.mackeeper"
-        "com.zeobit"
-        "com.pckeeper"
-        "com.cleanmymac"
-        "com.macpaw"
-    )
-    for agent in "${apple_bloatware_agents_list[@]}"; do
-        if launchctl list 2>/dev/null | grep -q "$agent"; then
-            bloatware_found=1
-            printf "     ${WARN} ${YELLOW}Apple bloatware:${NC} %s\n" "$agent"
-            add_issue "Apple bloatware agent detected: ${agent} (disabling SIP is required)" "Disable agent ${agent}" "launchctl bootout gui/501/${agent} 2>/dev/null; launchctl disable gui/501/${agent} 2>/dev/null"
-        fi
-    done
-
-    for agent in "${apple_bloatware_daemons_list[@]}"; do
-        if launchctl list 2>/dev/null | grep -q "$agent"; then
-            bloatware_found=1
-            printf "     ${WARN} ${YELLOW}Apple bloatware:${NC} %s\n" "$agent"
-            add_issue "Apple bloatware daemon detected: ${agent} (disabling SIP is required)" "Disable agent ${agent}" "sudo launchctl bootout system/${agent} 2>/dev/null; sudo launchctl disable system/${agent} 2>/dev/null"
-        fi
-    done
-
-    for agent in "${other_bloatware_list[@]}"; do
+    for agent in "${BLOATWARE_LIST[@]}"; do
         if launchctl list 2>/dev/null | grep -q "$agent"; then
             bloatware_found=1
             printf "     ${WARN} ${YELLOW}3rd party bloatware:${NC} %s\n" "$agent"
