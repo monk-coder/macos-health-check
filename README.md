@@ -33,7 +33,7 @@ A beautiful, user-friendly system health monitor for your Mac. Get an instant ov
 * [🔒 Privacy & Security](#-privacy--security)
   * [⚠️ Security Notes](#-security-notes)
   * [🔍 Verify Before Running](#-verify-before-running)
-  * [See Also](#see-also)
+* [🔗 See Also](#-see-also)
 * [📄 License](#-license)
 <!-- TOC -->
 
@@ -329,7 +329,7 @@ less /tmp/healthcheck.sh  # Review the code
 bash /tmp/healthcheck.sh  # Run after reviewing
 ```
 
-## See Also
+## 🔗 See Also
 
 For advances bloatware cleanup see [Disable-Tahoe-Bloatware.sh](https://gist.github.com/b0gdanw/0c20c2fd5d0a7e6cff01849b57108967) GitHub Gist by [Bogdan](https://gist.github.com/b0gdanw)
 
