@@ -43,10 +43,14 @@ readonly MEMORY_WARNING=70
 readonly DISK_CRITICAL=90
 readonly DISK_WARNING=75
 
+readonly BATTERY_CRITICAL=70
+readonly BATTERY_WARNING=80
+
 readonly SCORE_MAX=100
 readonly SCORE_LOAD_PENALTY=20
 readonly SCORE_MEM_PENALTY=20
 readonly SCORE_DISK_PENALTY=25
+readonly SCORE_BATTERY_PENALTY=15
 readonly SCORE_ISSUE_PENALTY=3
 
 readonly GRADE_A_THRESHOLD=90
@@ -66,6 +70,8 @@ LOAD_VAL=0
 CORES=0
 MEM_PERCENT=0
 DISK_PERCENT=0
+BATTERY_PERCENT=100
+IS_LAPTOP=false
 
 # Logging settings
 LOG_FILE=""
@@ -692,6 +698,51 @@ check_storage() {
 
 
 
+check_battery() {
+    # Check if this is a laptop with a battery
+    if ! ioreg -r -n AppleSmartBattery | grep -q "AppleSmartBattery"; then
+        IS_LAPTOP=false
+        return
+    fi
+
+    IS_LAPTOP=true
+    print_section_header "🔋 BATTERY HEALTH"
+
+    local battery_info=$(system_profiler SPPowerDataType)
+    local capacity=$(echo "$battery_info" | grep "Maximum Capacity" | awk '{print $3}' | tr -d '%')
+    local cycle_count=$(echo "$battery_info" | grep "Cycle Count" | awk '{print $3}')
+    local condition=$(echo "$battery_info" | grep "Condition" | awk -F': ' '{print $2}')
+
+    [ -z "$capacity" ] && capacity=100
+    BATTERY_PERCENT=$capacity
+
+    local status="${CHECK} ${GREEN}Battery health is good${NC}"
+    local color=$GREEN
+
+    if [ "$BATTERY_PERCENT" -le "$BATTERY_CRITICAL" ]; then
+        color=$RED
+        status="${CROSS} ${RED}Battery health is critical${NC}"
+        add_issue "Battery health is critical ($BATTERY_PERCENT%)" "Consider battery replacement" "echo 'Visit Apple Support for battery service options.'"
+    elif [ "$BATTERY_PERCENT" -le "$BATTERY_WARNING" ]; then
+        color=$YELLOW
+        status="${WARN} ${YELLOW}Battery health is degraded${NC}"
+        add_issue "Battery health is degraded ($BATTERY_PERCENT%)" "Monitor battery performance" "echo 'Battery capacity is below 80%.'"
+    fi
+
+    if [[ "$condition" != "Normal" && -n "$condition" ]]; then
+        status="${CROSS} ${RED}Battery condition: $condition${NC}"
+        color=$RED
+        add_issue "Battery condition: $condition" "Service battery" "echo 'Battery condition reported as $condition.'"
+    fi
+
+    printf "     ${status}\n\n"
+    printf "     Capacity: ${BOLD}${BATTERY_PERCENT}%%${NC}  Cycle Count: ${BOLD}${cycle_count}${NC}  Condition: ${BOLD}${condition}${NC}\n"
+    draw_bar "$BATTERY_PERCENT" "$color"
+    echo ""; line
+}
+
+
+
 check_launch_agents() {
     print_section_header "🚀 LAUNCH AGENTS & DAEMONS"
 
@@ -768,6 +819,14 @@ calculate_grade() {
         score=$((score - SCORE_DISK_PENALTY))
     elif [ "$DISK_PERCENT" -gt $DISK_WARNING ]; then
         score=$((score - SCORE_DISK_PENALTY / 2))
+    fi
+
+    if [ "$IS_LAPTOP" = true ]; then
+        if [ "$BATTERY_PERCENT" -le $BATTERY_CRITICAL ]; then
+            score=$((score - SCORE_BATTERY_PENALTY))
+        elif [ "$BATTERY_PERCENT" -le $BATTERY_WARNING ]; then
+            score=$((score - SCORE_BATTERY_PENALTY / 2))
+        fi
     fi
 
     score=$((score - issue_count * SCORE_ISSUE_PENALTY))
@@ -976,6 +1035,7 @@ main() {
     check_problem_processes
     check_memory
     check_storage
+    check_battery
     check_launch_agents
     calculate_grade
     local final_status=$?
