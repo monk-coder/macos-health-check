@@ -271,11 +271,11 @@ check_system_load() {
     local status_text="${GREEN}Low load - your Mac is relaxed${NC}"
     local bar_color=$GREEN
 
-    if [ "$LOAD_INT" -gt "$CORES" ]; then
+    if [ "$LOAD_INT" -gt "$HIGH_CPU_THRESHOLD" ]; then
         bar_color=$RED
         status_icon=$WARN
         status_text="${YELLOW}High load - your Mac is working hard${NC}"
-    elif [ "$LOAD_INT" -gt $((CORES / 2)) ]; then
+    elif [ "$LOAD_INT" -gt "$MODERATE_CPU_THRESHOLD" ]; then
         bar_color=$YELLOW
         status_icon=$CHECK
         status_text="${GREEN}Moderate load - running smoothly${NC}"
